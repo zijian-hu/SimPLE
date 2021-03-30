@@ -1,0 +1,26 @@
+# CMake
+cmake-build-*/
+
+# JetBrains IDE
+.idea/
+
+# VS Code
+.vscode/
+
+# Mac
+*.DS_Store
+
+# Node.js
+node_modules/
+package-lock.json
+
+# Python
+__pycache__/
+*.pyc
+
+# Jupyter notebook
+.ipynb_checkpoints
+
+# pyenv files
+.python-version
+
