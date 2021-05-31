@@ -1,0 +1,15 @@
+future
+h5py
+kornia>=0.3.2,<=0.4.0
+matplotlib
+numpy
+pillow
+plotly>=4.0.0
+pyyaml
+pandas
+scikit-learn
+scipy
+torch>=1.5.1,<=1.6.0
+torchvision>=0.6.1
+wandb
+tqdm

@@ -1,0 +1,26 @@
+name: SimPLE
+channels:
+  - defaults
+  - pytorch
+  - conda-forge
+dependencies:
+  - python=3.8.5
+  - pip
+  - pillow
+  - tqdm
+  - pyyaml
+  - matplotlib
+  - future
+  - h5py
+  - numpy
+  - matplotlib
+  - plotly
+  - seaborn
+  - scipy
+  - scikit-learn
+  - cudatoolkit=10.2
+  - pytorch::torchvision
+  - pytorch::pytorch=1.6.0
+  - pip:
+      - kornia==0.4.0
+      - wandb

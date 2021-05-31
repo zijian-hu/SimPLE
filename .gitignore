@@ -24,3 +24,8 @@ __pycache__/
 # pyenv files
 .python-version
 
+# data files
+data/
+logs/
+wandb/
+lightning_logs/

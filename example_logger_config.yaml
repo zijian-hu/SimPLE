@@ -1,0 +1,20 @@
+# A short display name for this run, which is how you'll identify this run in the UI
+name: null
+
+# An entity is a username or team name where you're sending runs
+entity: null
+
+# The name of the project where you're sending the new run
+project: null
+
+# A list of strings, which will populate the list of tags on this run in the UI
+tags: [ ]
+
+# A longer description of the run, like a -m commit message in git
+notes: null
+
+# if set to True, the run auto resumes; can also be a unique string for manual resuming
+resume: False
+
+# Can be "online", "offline" or "disabled". Defaults to online
+mode: online
