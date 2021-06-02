@@ -24,6 +24,7 @@ transfer learning setting, where models are initialized by the weights pre-train
 
 ## News
 
+[6/2/2021]: add animations and fix broken link in README <br>
 [5/30/2021]: initial release
 
 ## Requirements
@@ -38,7 +39,7 @@ transfer learning setting, where models are initialized by the weights pre-train
 - scikit-learn
 - [plotly](https://plotly.com/python/) 4.0.0 or newer
 - wandb 0.9.0 or newer (**optional**, required for logging to [Weights & Biases](https://www.wandb.com/)
-  see [utils.loggers.WandbLogger](utils/loggers.py) for detail)
+  see [WandbLogger](utils/loggers/wandb_logger.py) for detail) for detail)
 
 ### Recommended versions
 
