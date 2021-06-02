@@ -8,6 +8,8 @@ by [Zijian Hu*](https://www.zijianhu.com/),
 
 ## Abstract
 
+<img src="media/pairloss_anim.png"  style="  display: block; margin-left: auto; margin-right: auto; width: 50%;"/>
+
 A common classification task situation is where one has a large amount of data available for training, but only a small
 portion is annotated with class labels. The goal of semi-supervised training, in this context, is to improve
 classification accuracy by leverage information not only from labeled data but also from a large amount of unlabeled
