@@ -24,6 +24,7 @@ transfer learning setting, where models are initialized by the weights pre-train
 
 ## News
 
+[6/22/2021]: add Mini-ImageNet example <br>
 [6/2/2021]: add animations and fix broken link in README <br>
 [5/30/2021]: initial release
 
@@ -60,13 +61,32 @@ pip install -r requirements.txt
 or using conda:
 
 ```shell
-# or create evaluation environment
 conda env create -f environment.yaml
 ```
 
 ## Running
 
 ### Example
+
+To replicate Mini-ImageNet results
+
+```shell
+CUDA_DEVICE_ORDER="PCI_BUS_ID" CUDA_VISIBLE_DEVICES="0" \
+python main.py \
+-e simple \
+--num-epochs 2048 \
+--dataset miniimagenet \
+--labeled-train-size 4000 \
+--validation-size 7200 \
+--batch-size 16 \
+--K-strong 7 \
+--lambda-u 300 \
+--lambda-pair 300 \
+--conf-threshold 0.95 \
+--sim-threshold 0.9 \
+--ema-type full \
+--max-grad-norm 5
+```
 
 To replicate CIFAR-10 results
 
@@ -89,7 +109,7 @@ python main.py \
 --lr-scheduler-type cosine_decay
 ```
 
-For replicate CIFAR-100 result (with distributed training)
+To replicate CIFAR-100 result (with distributed training)
 
 ```shell
 CUDA_DEVICE_ORDER="PCI_BUS_ID" CUDA_VISIBLE_DEVICES="0,1" \
