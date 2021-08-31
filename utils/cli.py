@@ -4,31 +4,41 @@ from pathlib import Path
 import warnings
 
 import numpy as np
-import yaml
 
-from .utils import filter_dict
+from .utils import str_to_bool, filter_dict
+from .file_io import read_yaml
 
 # for type hint
 from typing import Union, Tuple, List, Optional, Set, Dict, Any
 from argparse import Namespace, ArgumentParser
 
+ArgsOutType = Union[Namespace, Tuple[Namespace, List[str]]]
+
+# choices for CLI args. the first element should be default choice
+AUGMENTER_TYPE_CHOICES = ["simple", "randaugment", "fixed"]
+
 LOGGER_EXCLUDED_KEYS = {
     "local_rank",
+    "logger_run_name",
+    "tags",
+    "notes",
+    "dry_run",
     "is_display_plots",
+    "wandb_resume",
     "logger_config_path",
     "logger_config_dict",
 }
 
 
 def get_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser("SimPLE")
+    parser = argparse.ArgumentParser("SimPLE", fromfile_prefix_chars="@")
 
     # Experiment
     parser.add_argument('-e',
                         '--estimator',
                         '--estimator-type',
                         dest="estimator",
-                        choices=["default", "ablation", "simple"],
+                        choices=["default", "simple", "ablation"],
                         default="default",
                         type=str,
                         help=f"Estimator type")
@@ -45,8 +55,8 @@ def get_arg_parser() -> argparse.ArgumentParser:
                         dest="num_warmup_epochs",
                         default=None,
                         type=int,
-                        help='number of warm-up epochs for unsupervised loss ramp-up during training'
-                             'set to 0 to disable ramp-up')
+                        help='number of warm-up epochs for unsupervised loss linear ramp-up during training'
+                             'set to 0 to disable linear ramp-up')
 
     parser.add_argument('--num-step-per-epoch',
                         dest="num_step_per_epoch",
@@ -56,6 +66,7 @@ def get_arg_parser() -> argparse.ArgumentParser:
 
     parser.add_argument('--batch-size',
                         '--train-batch-size',
+                        '--labeled-train-batch-size',
                         dest="train_batch_size",
                         default=64,
                         type=int,
@@ -108,6 +119,15 @@ def get_arg_parser() -> argparse.ArgumentParser:
                         default=0.49951171875,
                         type=float,
                         help='factor for cosine learning rate decay')
+
+    parser.add_argument('--lr-warmup-step',
+                        '--lr-warmup-steps',
+                        '--learning-rate-warmup-step',
+                        '--learning-rate-warmup-steps',
+                        dest="lr_warmup_step",
+                        default=0,
+                        type=int,
+                        help='number of warmup steps for cosine learning rate decay with warmup')
 
     parser.add_argument('--optimizer-momentum',
                         dest="optimizer_momentum",
@@ -191,31 +211,39 @@ def get_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--lr-scheduler',
                         '--lr-scheduler-type',
                         dest="lr_scheduler_type",
-                        choices=["nop", "cosine_decay", "step_decay"],
+                        choices=["nop", "cosine_decay", "cosine_warmup_decay", "step_decay"],
                         default="nop",
                         type=str,
                         help=f"learning rate scheduler type")
 
     parser.add_argument('--augmenter-type',
                         dest="augmenter_type",
-                        choices=["simple", "randaugment", "fixed"],
-                        default="simple",
+                        choices=AUGMENTER_TYPE_CHOICES,
+                        default=AUGMENTER_TYPE_CHOICES[0],
                         type=str,
                         help=f"augmenter type")
 
     parser.add_argument('--strong-augmenter-type',
                         dest="strong_augmenter_type",
-                        choices=["simple", "randaugment", "fixed"],
-                        default="randaugment",
+                        choices=AUGMENTER_TYPE_CHOICES,
+                        default=AUGMENTER_TYPE_CHOICES[1],
                         type=str,
                         help=f"strong augmenter type")
 
     parser.add_argument('--ema-type',
                         dest="ema_type",
-                        choices=["standard", "full"],
-                        default="standard",
+                        choices=["default", "full"],
+                        default="default",
                         type=str,
                         help=f"EMA type")
+
+    parser.add_argument('--rampup-type',
+                        '--ramp-up-type',
+                        dest="ramp_up_type",
+                        choices=["linear"],
+                        default="linear",
+                        type=str,
+                        help=f"Loss ramp-up type")
 
     parser.add_argument('--u-loss-type',
                         '--unsupervised-loss-type',
@@ -232,20 +260,7 @@ def get_arg_parser() -> argparse.ArgumentParser:
                         action='store_true',
                         help='Apply threshold to unsupervised loss')
 
-    parser.add_argument('--ema-label-guessing',
-                        dest="ema_label_guessing",
-                        default=True,
-                        action='store_true',
-                        help='Label guessing in with EMA model')
-
-    parser.add_argument('--no-ema-label-guessing',
-                        '--non-ema-label-guessing',
-                        dest="ema_label_guessing",
-                        default=True,
-                        action='store_false',
-                        help='Turn off EMA for label guessing')
-
-    # pair wise mixmatch settings
+    # pair loss settings
     parser.add_argument('--lambda-pair',
                         dest="lambda_pair",
                         default=0.,
@@ -260,10 +275,12 @@ def get_arg_parser() -> argparse.ArgumentParser:
                         type=str,
                         help=f"similarity function type for pair loss")
 
-    parser.add_argument('--dist-loss-type',
+    parser.add_argument('--dist-type',
+                        '--distance-type',
+                        '--dist-loss-type',
                         '--distance-loss-type',
                         dest="distance_loss_type",
-                        choices=["bhc", "l2"],
+                        choices=["bhc", "entropy", "l2"],
                         default="bhc",
                         type=str,
                         help=f"statistical distance function type for pair loss")
@@ -323,7 +340,7 @@ def get_arg_parser() -> argparse.ArgumentParser:
 
     parser.add_argument('--dataset',
                         dest="dataset",
-                        choices=["cifar10", "cifar100", "miniimagenet", "svhn", "domainnet"],
+                        choices=["cifar10", "cifar100", "miniimagenet", "svhn", "domainnet-real"],
                         required=True,
                         type=str,
                         help=f"dataset type")
@@ -347,21 +364,62 @@ def get_arg_parser() -> argparse.ArgumentParser:
                         help='Set to True to use pre-trained model')
 
     # evaluation settings
+    parser.add_argument('--log-labeled-train-set',
+                        '--enable-labeled-train-log',
+                        dest="log_labeled_train_set",
+                        default=True,
+                        action='store_true',
+                        help='Enable labeled train set logging and evaluation at the end of every train epoch')
+
     parser.add_argument('--no-labeled-train-log',
+                        '--no-log-labeled-train-set',
                         '--disable-labeled-train-log',
                         dest="log_labeled_train_set",
                         default=True,
                         action='store_false',
                         help='Disable labeled train set logging and evaluation at the end of every train epoch')
 
+    parser.add_argument('--log-unlabeled-train-set',
+                        '--enable-unlabeled-train-log',
+                        dest="log_unlabeled_train_set",
+                        default=True,
+                        action='store_true',
+                        help='Enable unlabeled train set logging and evaluation at the end of every train epoch')
+
     parser.add_argument('--no-unlabeled-train-log',
+                        '--no-log-unlabeled-train-set',
                         '--disable-unlabeled-train-log',
                         dest="log_unlabeled_train_set",
                         default=True,
                         action='store_false',
                         help='Disable unlabeled train set logging and evaluation at the end of every train epoch')
 
+    parser.add_argument('--log-validation-set',
+                        '--enable-validation-log',
+                        dest="log_validation_set",
+                        default=True,
+                        action='store_true',
+                        help='Enable validation set logging and evaluation after every at the end of every train '
+                             'epoch')
+
+    parser.add_argument('--no-validation-log',
+                        '--no-log-validation-set',
+                        '--disable-validation-log',
+                        dest="log_validation_set",
+                        default=True,
+                        action='store_false',
+                        help='Disable validation set logging and evaluation after every at the end of every train '
+                             'epoch')
+
+    parser.add_argument('--log-test-set',
+                        '--enable-test-log',
+                        dest="log_test_set",
+                        default=True,
+                        action='store_true',
+                        help='Disable test set logging and evaluation after every at the end of every train epoch')
+
     parser.add_argument('--no-test-log',
+                        '--no-log-test-set',
                         '--disable-test-log',
                         dest="log_test_set",
                         default=True,
@@ -436,11 +494,43 @@ def get_arg_parser() -> argparse.ArgumentParser:
                         default=None,
                         help=f"interval for logging train loss")
 
+    parser.add_argument('--logger-run-name',
+                        dest="logger_run_name",
+                        type=str,
+                        default=None,
+                        help=f"name for the current execution")
+
+    parser.add_argument("--tags",
+                        dest="tags",
+                        type=str,
+                        nargs="+",
+                        default=None,
+                        help=f"tags for wandb logger")
+
+    parser.add_argument("--notes",
+                        dest="notes",
+                        type=str,
+                        default=None,
+                        help=f"notes for wandb logger")
+
     parser.add_argument('--logger-config-path',
                         dest="logger_config_path",
                         default=None,
                         type=str,
                         help="path to logger configuration file (only support \".yaml\" and \".yml\" format)")
+
+    parser.add_argument('--dryrun',
+                        '--dry-run',
+                        dest="dry_run",
+                        default=False,
+                        action='store_true',
+                        help='Disable syncing to wandb')
+
+    parser.add_argument('--wandb-resume',
+                        dest="wandb_resume",
+                        type=str,
+                        default=False,
+                        help='if set to True, the run auto resumes; can also be a unique string for manual resuming')
 
     parser.add_argument('--display-plot',
                         '--display-plots',
@@ -475,6 +565,10 @@ def parse_args(args: Namespace) -> Namespace:
         if args.num_warmup_epochs is None:
             args.num_warmup_epochs = 0
 
+    elif args.estimator == "ablation":
+        args.lambda_u = 0.
+        args.lambda_pair = 0.
+
     elif args.mixmatch_type is None:
         # if estimator type is not "simple" and mixmatch type is unspecified
         if args.lambda_pair != 0:
@@ -492,6 +586,15 @@ def parse_args(args: Namespace) -> Namespace:
     if args.num_warmup_epochs is None:
         args.num_warmup_epochs = args.num_epochs
 
+    if args.fast_dev_mode:
+        args.num_epochs = 2
+        args.num_step_per_epoch = 10
+        args.max_eval_step = 1
+
+    if args.log_interval is None:
+        # update args.log_interval
+        args.log_interval = args.num_step_per_epoch
+
     if args.use_pretrain and args.feature_learning_rate is None:
         args.feature_learning_rate = args.learning_rate
 
@@ -500,46 +603,19 @@ def parse_args(args: Namespace) -> Namespace:
 
     args.num_workers = max(args.num_workers, 0)
 
-    if args.ema_decay == 0:
-        # if ema_decay is 0, turn off EMA
-        args.use_ema = False
-    elif not args.use_ema:
-        # if use_ema is False, set ema_decay to 0
-        args.ema_decay = 0
-
     # value check
-    assert args.num_epochs >= 1, f"num_epochs must be >= 1 but get {args.num_epochs}"
-    assert args.num_warmup_epochs >= 0, f"num_warmup_epochs must be >= 0 but get {args.num_warmup_epochs}"
-    assert args.num_step_per_epoch >= 1, f"num_step_per_epoch must be >= 1 but get {args.num_step_per_epoch}"
-    assert args.train_batch_size >= 1, f"train_batch_size must be >= 1 but get {args.train_batch_size}"
-    assert args.test_batch_size >= 1, f"test_batch_size must be >= 1 but get {args.test_batch_size}"
-    assert args.learning_rate > 0, f"learning_rate must be > 0 but get {args.learning_rate}"
-    if args.feature_learning_rate is not None:
-        assert args.feature_learning_rate > 0, f"feature_learning_rate must be > 0 but get {args.feature_learning_rate}"
-    assert args.weight_decay >= 0, f"weight_decay must be >= 0 but get {args.weight_decay}"
-    assert args.max_eval_step >= 1, f"max_eval_step must be >= 1 but get {args.max_eval_step}"
-    assert 0 <= args.ema_decay <= 1, f"ema_decay must be in [0, 1] but get {args.ema_decay}"
-    assert args.k >= 1, f"K must be >= 1 but get {args.k}"
-    assert args.k_strong >= 1, f"k_strong must be >= 1 but get {args.k_strong}"
-    assert args.t != 0, f"T must not equal 0 but get {args.t}"
-    assert args.alpha > 0, f"alpha must be > 0 but get {args.alpha}"
-    assert args.labeled_train_size >= 1, f"labeled_train_size must be >= 1 but get {args.labeled_train_size}"
-    assert args.validation_size >= 1, f"validation_size must be >= 1 but get {args.validation_size}"
-    assert args.num_latest_checkpoints_kept is None or args.num_latest_checkpoints_kept >= 0, \
-        f"num_latest_checkpoints_kept must be None or >= 0, but get {args.num_latest_checkpoints_kept}"
+    verify_args(args)
+
+    if isinstance(args.wandb_resume, str):
+        args.wandb_resume = str_to_bool(args.wandb_resume)
 
     # assign logger_config_dict to args
     args.logger_config_dict = parse_logger_config(args)
 
-    if args.checkpoint_path is not None:
-        checkpoint_path = Path(args.checkpoint_path)
-        assert checkpoint_path.is_file(), f"\"{args.checkpoint_path}\" is invalid"
-
-        if args.use_pretrain is False and bool(args.logger_config_dict.get("resume", False)):
-            # use the same log_dir if continuing on previous run
-            args.log_dir = str(checkpoint_path.parent)
-    else:
-        assert not bool(args.use_pretrain), f"checkpoint_path must be set if use_pretrain is True"
+    if (args.checkpoint_path is not None) and (not args.use_pretrain) and \
+            bool(args.logger_config_dict.get("resume", False)):
+        # use the same log_dir if continuing on previous run
+        args.log_dir = str(Path(args.checkpoint_path).parent)
 
     if args.log_dir is None:
         args.log_dir = generate_log_path(log_dir="logs", basename=args.logger_config_dict["name"])
@@ -565,21 +641,35 @@ def parse_logger_config(args: Namespace) -> Dict[str, Union[Optional[str], bool,
             resume=False,
             mode="offline"))
 
-        assert args.logger_config_path is not None, f"logger_config_path must be a valid file path"
-        logger_config_path = Path(args.logger_config_path)
+        if args.logger_config_path is not None:
+            logger_config_path = Path(args.logger_config_path)
 
-        assert logger_config_path.is_file() and logger_config_path.suffix.lower() in {".yaml", ".yml"}, \
-            f"logger_config_path must be a valid file path"
+            if logger_config_path.is_file() and logger_config_path.suffix.lower() in {".yaml", ".yml"}:
+                # load config file and update logger_config_dict
+                logger_config_dict.update(read_yaml(logger_config_path))
 
-        with open(logger_config_path, "r") as f:
-            # load config file
-            logger_config_dict.update(yaml.safe_load(f))
+        # overwrite logger_config_dict with CLI arguments
+        if args.tags is not None:
+            logger_config_dict["tags"] = args.tags
+
+        if args.notes is not None:
+            logger_config_dict["notes"] = args.notes
+
+        if args.wandb_resume is not False:
+            logger_config_dict["resume"] = args.wandb_resume
 
         if args.debug_mode and "debug" not in logger_config_dict["tags"]:
             logger_config_dict["tags"].append("debug")
 
         assert args.checkpoint_path is not None or not bool(logger_config_dict["resume"]), \
-            f"checkpoint_path must be set if \"resume\" in logger config file is not False"
+            f"checkpoint_path must be set if \"resume\" or \"wandb_resume\" is not False"
+
+        if args.dry_run:
+            logger_config_dict["mode"] = "offline"
+
+    # overwrite logger_config_dict with CLI arguments
+    if args.logger_run_name is not None:
+        logger_config_dict["name"] = args.logger_run_name
 
     # generate experiment name for logger
     if logger_config_dict["name"] is None:
@@ -588,8 +678,37 @@ def parse_logger_config(args: Namespace) -> Dict[str, Union[Optional[str], bool,
     return logger_config_dict
 
 
+def verify_args(args: Namespace) -> None:
+    assert args.num_epochs >= 1, f"num_epochs must be >= 1 but get {args.num_epochs}"
+    assert args.num_warmup_epochs >= 0, f"num_warmup_epochs must be >= 0 but get {args.num_warmup_epochs}"
+    assert args.num_step_per_epoch >= 1, f"num_step_per_epoch must be >= 1 but get {args.num_step_per_epoch}"
+    assert args.train_batch_size >= 1, f"train_batch_size must be >= 1 but get {args.train_batch_size}"
+    assert args.test_batch_size >= 1, f"test_batch_size must be >= 1 but get {args.test_batch_size}"
+    assert args.learning_rate > 0, f"learning_rate must be > 0 but get {args.learning_rate}"
+    if args.feature_learning_rate is not None:
+        assert args.feature_learning_rate > 0, f"feature_learning_rate must be > 0 but get {args.feature_learning_rate}"
+    assert args.weight_decay >= 0, f"weight_decay must be >= 0 but get {args.weight_decay}"
+    assert args.max_eval_step >= 1, f"max_eval_step must be >= 1 but get {args.max_eval_step}"
+    assert 0 <= args.ema_decay <= 1, f"ema_decay must be in [0, 1] but get {args.ema_decay}"
+    assert args.k >= 1, f"K must be >= 1 but get {args.k}"
+    assert args.k_strong >= 1, f"k_strong must be >= 1 but get {args.k_strong}"
+    assert args.t != 0, f"T must not equal 0 but get {args.t}"
+    assert args.alpha > 0, f"alpha must be > 0 but get {args.alpha}"
+    assert args.labeled_train_size >= 1, f"labeled_train_size must be >= 1 but get {args.labeled_train_size}"
+    assert args.validation_size >= 1, f"validation_size must be >= 1 but get {args.validation_size}"
+    assert args.lr_warmup_step >= 0, f"lr_warmup_step must be >= 0 but get {args.lr_warmup_step}"
+
+    assert args.num_latest_checkpoints_kept is None or args.num_latest_checkpoints_kept >= 0, \
+        f"num_latest_checkpoints_kept must be None or >= 0, but get {args.num_latest_checkpoints_kept}"
+
+    if args.checkpoint_path is not None:
+        assert Path(args.checkpoint_path).is_file(), f"\"{args.checkpoint_path}\" is invalid"
+    else:
+        assert not bool(args.use_pretrain), f"checkpoint_path must be set if use_pretrain is True"
+
+
 def get_args(parser: Optional[ArgumentParser] = None,
-             return_unparsed: bool = False) -> Union[Namespace, Tuple[Namespace, List[str]]]:
+             return_unparsed: bool = False) -> ArgsOutType:
     if parser is None:
         parser = get_arg_parser()
 
@@ -621,11 +740,15 @@ def generate_logger_run_name(args: Namespace) -> str:
 
     logger_run_name = estimator_name_map[args.estimator]
 
+    if args.estimator == "simple" and args.lambda_pair == 0:
+        logger_run_name += " Baseline"
+
     if args.strong_augmenter_type in augmenter_type_name_map:
         logger_run_name += f" {augmenter_type_name_map[args.strong_augmenter_type]}"
 
-    if args.estimator != "simple" and args.lambda_pair != 0:
-        logger_run_name += "-pair"
+    if args.estimator != "simple":
+        if args.lambda_pair != 0:
+            logger_run_name += "-pair"
 
     if args.use_pretrain:
         logger_run_name += "-pretrain"
@@ -636,11 +759,8 @@ def generate_logger_run_name(args: Namespace) -> str:
     return logger_run_name
 
 
-def generate_log_path(log_dir: str, basename: str, is_create_dir: bool = True) -> str:
+def generate_log_path(log_dir: str, basename: str) -> str:
     log_dir_path = Path(log_dir) / f"{basename}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
-
-    if is_create_dir:
-        log_dir_path.mkdir(parents=True, exist_ok=True)
 
     return str(log_dir_path)
 

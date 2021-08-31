@@ -3,21 +3,26 @@ from torch.nn import functional as F
 from simple_estimator import SimPLEEstimator
 
 # for type hint
-from typing import Tuple
+from typing import Tuple, Dict
 from torch import Tensor
-from loss.types import LossOutType
+from loss.types import LossInfoType
 
 
 class AblationEstimator(SimPLEEstimator):
-    def training_step(self, batch: Tuple[Tuple[Tensor, Tensor], ...], batch_idx: int) -> LossOutType:
-        x_inputs, x_targets = self.preprocess_batch(batch, batch_idx)
+    def training_step(self, batch: Tuple[Tuple[Tensor, Tensor], ...], batch_idx: int) -> Tuple[Tensor, LossInfoType]:
+        outputs = self.preprocess_batch(batch, batch_idx)
 
-        x_logits = self.compute_train_logits(x_inputs)
+        model_outputs = self.compute_train_logits(x_inputs=outputs["x_inputs"])
+
+        outputs.update(model_outputs)
 
         # calculate loss
-        return self.compute_train_loss(x_logits, x_targets)
+        return self.compute_train_loss(
+            x_logits=outputs["x_logits"],
+            x_targets=outputs["x_targets"]
+        )
 
-    def preprocess_batch(self, batch: Tuple[Tuple[Tensor, Tensor], ...], batch_idx: int) -> Tuple[Tensor, ...]:
+    def preprocess_batch(self, batch: Tuple[Tuple[Tensor, Tensor], ...], batch_idx: int) -> Dict[str, Tensor]:
         # unpack batch
         (x_inputs, x_targets), (_, _) = batch
 
@@ -28,21 +33,24 @@ class AblationEstimator(SimPLEEstimator):
         # apply augmentations
         x_inputs = self.augmenter(x_inputs)
 
-        return x_inputs, x_targets
+        return dict(
+            x_inputs=x_inputs,
+            x_targets=x_targets,
+        )
 
-    def compute_train_logits(self, x_inputs: Tensor, *args: Tensor) -> Tensor:
-        return self.model(x_inputs)
+    def compute_train_logits(self, x_inputs: Tensor, *args: Tensor) -> Dict[str, Tensor]:
+        return dict(x_logits=self.model(x_inputs))
 
     def compute_train_loss(self,
                            x_logits: Tensor,
                            x_targets: Tensor,
                            *args: Tensor,
-                           return_plot_info: bool = False) -> LossOutType:
+                           **kwargs) -> Tuple[Tensor, LossInfoType]:
         loss = F.cross_entropy(x_logits, x_targets, reduction="mean")
 
         log_info = {
-            "loss": loss,
-            "loss_x": loss,
+            "loss": loss.detach().clone(),
+            "loss_x": loss.detach().clone(),
         }
 
         return loss, {"log": log_info, "plot": {}}

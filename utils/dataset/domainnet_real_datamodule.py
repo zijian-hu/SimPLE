@@ -1,48 +1,42 @@
-from torchvision.datasets import SVHN
-
 from .cifar10_datamodule import CIFAR10DataModule
+from .domainnet_real import DomainNetReal
 from .utils import per_class_random_split
 
 # for type hint
-from typing import Optional, List
+from typing import Optional, Tuple, List
 from torch.utils.data import Dataset
 
 
-class SVHNDataModule(CIFAR10DataModule):
-    num_classes: int = 10
+class DomainNetRealDataModule(CIFAR10DataModule):
+    num_classes: int = 345
 
-    total_train_size: int = 73_257
-    total_test_size: int = 26_032
+    total_train_size: int = 120_906
+    total_test_size: int = 52_041
 
-    DATASET = SVHN
+    DATASET = DomainNetReal
 
     def __init__(self,
                  data_dir: str,
                  labeled_train_size: int,
                  validation_size: int,
                  unlabeled_train_size: Optional[int] = None,
+                 dims: Optional[Tuple[int, ...]] = None,
                  **kwargs):
-        super(SVHNDataModule, self).__init__(
+        if dims is None:
+            dims = (3, 224, 224)
+
+        super(DomainNetRealDataModule, self).__init__(
             data_dir=data_dir,
             labeled_train_size=labeled_train_size,
             validation_size=validation_size,
             unlabeled_train_size=unlabeled_train_size,
+            dims=dims,
             **kwargs)
 
         # dataset stats
-        # SVHN mean, std values in CHW
-        self.dataset_mean = [0.4376821, 0.4437697, 0.47280442]
-        self.dataset_std = [0.19803012, 0.20101562, 0.19703614]
-
-    def prepare_data(self, *args, **kwargs):
-        self.DATASET(root=self.data_dir, split="train", download=True)
-        self.DATASET(root=self.data_dir, split="test", download=True)
-
-    def setup(self, stage: Optional[str] = None):
-        full_train_set = self.DATASET(root=self.data_dir, split="train")
-        full_test_set = self.DATASET(root=self.data_dir, split="test")
-
-        self.setup_helper(full_train_set=full_train_set, full_test_set=full_test_set, stage=stage)
+        # DomainNet-Real mean, std values in CHW
+        self.dataset_mean = [0.54873651, 0.60511086, 0.5840634]
+        self.dataset_std = [0.33955591, 0.32637834, 0.31887854]
 
     def split_dataset(self, dataset: Dataset, **kwargs) -> List[Dataset]:
         split_kwargs = dict(lengths=[self.validation_size, self.labeled_train_size],

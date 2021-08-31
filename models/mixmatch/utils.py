@@ -1,15 +1,18 @@
-from functools import reduce
-from typing import Sequence, Tuple
-
-import numpy as np
 import torch
-from torch import nn, Tensor
+import numpy as np
 from torch.nn import functional as F
+
+from functools import reduce
 
 from ..utils import set_model_mode
 
+# for type hint
+from typing import Sequence, Tuple
+from torch import Tensor
+from torch.nn import Module
 
-def label_guessing(model: nn.Module, batches: Sequence[Tensor], is_train_mode: bool = True) -> Tensor:
+
+def label_guessing(batches: Sequence[Tensor], model: Module, is_train_mode: bool = True) -> Tensor:
     with set_model_mode(model, is_train_mode):
         with torch.no_grad():
             probs = [F.softmax(model(batch), dim=1) for batch in batches]
@@ -18,8 +21,8 @@ def label_guessing(model: nn.Module, batches: Sequence[Tensor], is_train_mode: b
     return mean_prob
 
 
-def sharpen(x: Tensor, t: float) -> Tensor:
-    sharpened_x = x ** (1 / t)
+def sharpen(x: Tensor, temperature: float) -> Tensor:
+    sharpened_x = x ** (1 / temperature)
     return sharpened_x / sharpened_x.sum(dim=1, keepdim=True)
 
 

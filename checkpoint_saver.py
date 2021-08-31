@@ -3,12 +3,13 @@ import numpy as np
 
 from pathlib import Path
 import re
+import warnings
 
 from utils import find_checkpoint_path, find_all_files
 from utils.metrics import MetricMode, MetricMonitor
 
 # for type hint
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 from simple_estimator import SimPLEEstimator
 from utils import Logger
 
@@ -71,7 +72,7 @@ class CheckpointSaver:
         return self._estimator
 
     @estimator.setter
-    def estimator(self, estimator: SimPLEEstimator):
+    def estimator(self, estimator: SimPLEEstimator) -> None:
         self._estimator = estimator
 
         # recover best value
@@ -85,7 +86,7 @@ class CheckpointSaver:
         return self._logger
 
     @logger.setter
-    def logger(self, logger: Logger):
+    def logger(self, logger: Logger) -> None:
         self._logger = logger
 
         # register log hooks
@@ -97,7 +98,7 @@ class CheckpointSaver:
         return self._checkpoint_metric
 
     @checkpoint_metric.setter
-    def checkpoint_metric(self, checkpoint_metric: str):
+    def checkpoint_metric(self, checkpoint_metric: str) -> None:
         assert checkpoint_metric in self.monitor, f"{checkpoint_metric} is not in metric monitor"
 
         self._checkpoint_metric = checkpoint_metric
@@ -134,7 +135,11 @@ class CheckpointSaver:
     def is_remove_old_checkpoint(self) -> bool:
         return self.num_latest_checkpoints_kept is not None and self.num_latest_checkpoints_kept > 0
 
-    def save_checkpoint(self, checkpoint: Dict[str, Any], checkpoint_path: str, is_logger_save: bool = False) -> str:
+    def save_checkpoint(self,
+                        checkpoint: Dict[str, Any],
+                        checkpoint_path: Union[str, Path],
+                        is_logger_save: bool = False) -> Path:
+        checkpoint_path = str(checkpoint_path)
         torch.save(checkpoint, checkpoint_path)
 
         print(f"Checkpoint saved to \"{checkpoint_path}\"", flush=True)
@@ -142,12 +147,12 @@ class CheckpointSaver:
         if is_logger_save:
             self.logger.save(checkpoint_path)
 
-        return checkpoint_path
+        return Path(checkpoint_path)
 
     def save_best_checkpoint(self,
                              checkpoint: Optional[Dict[str, any]] = None,
                              is_logger_save: bool = False,
-                             **kwargs) -> str:
+                             **kwargs) -> Path:
         if checkpoint is None:
             checkpoint = self.get_checkpoint()
 
@@ -162,17 +167,17 @@ class CheckpointSaver:
     def save_latest_checkpoint(self,
                                checkpoint: Optional[Dict[str, any]] = None,
                                is_logger_save: bool = False,
-                               **kwargs) -> Optional[str]:
-        new_checkpoint_path = None
+                               **kwargs) -> Optional[Path]:
+        checkpoint_path: Optional[Path] = None
 
         if self.is_save_latest_checkpoint:
             if checkpoint is None:
                 checkpoint = self.get_checkpoint()
 
             # save new checkpoint
-            new_checkpoint_path = self.save_checkpoint(checkpoint_path=self.latest_full_checkpoint_str.format(**kwargs),
-                                                       checkpoint=checkpoint,
-                                                       is_logger_save=is_logger_save)
+            checkpoint_path = self.save_checkpoint(checkpoint_path=self.latest_full_checkpoint_str.format(**kwargs),
+                                                   checkpoint=checkpoint,
+                                                   is_logger_save=is_logger_save)
 
             # cleanup old checkpoints
             self.cleanup_checkpoints()
@@ -180,9 +185,9 @@ class CheckpointSaver:
         if self.delayed_save_best_model and self.is_best_model:
             self.save_best_checkpoint(**kwargs)
 
-        return new_checkpoint_path
+        return checkpoint_path
 
-    def get_checkpoint(self):
+    def get_checkpoint(self) -> Dict[str, Any]:
         checkpoint = self.estimator.get_checkpoint()
 
         # add best metrics
@@ -190,7 +195,7 @@ class CheckpointSaver:
 
         return checkpoint
 
-    def update_best_checkpoint(self):
+    def update_best_checkpoint(self) -> None:
         """
         Update the logged metrics for the best checkpoint
 
@@ -198,6 +203,12 @@ class CheckpointSaver:
 
         """
         best_checkpoint_path = self.find_best_checkpoint_path()
+
+        if best_checkpoint_path is None:
+            warnings.warn("Cannot find best checkpoint")
+            return
+
+        best_checkpoint_path = str(best_checkpoint_path)
         best_checkpoint = torch.load(best_checkpoint_path, map_location=self.device)
 
         # update best metrics
@@ -206,10 +217,8 @@ class CheckpointSaver:
         self.save_checkpoint(checkpoint_path=str(Path(self.log_dir) / self.absolute_best_path),
                              checkpoint=best_checkpoint)
 
-    def find_best_checkpoint_path(self,
-                                  checkpoint_dir: Optional[str] = None,
-                                  return_full_path: bool = True,
-                                  ignore_absolute_best: bool = True) -> Optional[str]:
+    def find_best_checkpoint_path(self, checkpoint_dir: Optional[str] = None, ignore_absolute_best: bool = True) \
+            -> Optional[Path]:
         if checkpoint_dir is None:
             checkpoint_dir = self.log_dir
 
@@ -217,28 +226,22 @@ class CheckpointSaver:
 
         if not ignore_absolute_best and abs_best_path.is_file():
             # if not ignoring absolute best path and the path is a file, return the absolute best file path
-            return str(abs_best_path)
+            return abs_best_path
 
-        checkpoint_path = find_checkpoint_path(checkpoint_dir,
-                                               step_filter=self.best_checkpoint_pattern,
-                                               return_full_path=return_full_path)
+        checkpoint_path = find_checkpoint_path(checkpoint_dir, step_filter=self.best_checkpoint_pattern)
 
         if checkpoint_path is None:
-            checkpoint_path = self.find_latest_checkpoint_path(checkpoint_dir=checkpoint_dir,
-                                                               return_full_path=return_full_path)
+            checkpoint_path = self.find_latest_checkpoint_path(checkpoint_dir=checkpoint_dir)
 
         return checkpoint_path
 
-    def find_latest_checkpoint_path(self, checkpoint_dir: Optional[str] = None, return_full_path: bool = True) \
-            -> Optional[str]:
+    def find_latest_checkpoint_path(self, checkpoint_dir: Optional[str] = None) -> Optional[Path]:
         if checkpoint_dir is None:
             checkpoint_dir = self.log_dir
 
-        return find_checkpoint_path(checkpoint_dir,
-                                    step_filter=self.latest_checkpoint_pattern,
-                                    return_full_path=return_full_path)
+        return find_checkpoint_path(checkpoint_dir, step_filter=self.latest_checkpoint_pattern)
 
-    def update_best_metric(self, log_info: Dict[str, Any], logger: Logger):
+    def update_best_metric(self, log_info: Dict[str, Any], logger: Logger) -> None:
         updated_dict = self.monitor.update_metrics(log_info)
 
         for updated_key, new_best_value in updated_dict.items():
@@ -257,14 +260,14 @@ class CheckpointSaver:
             self.save_best_checkpoint(global_step=self.global_step)
 
     def recover_checkpoint(self, checkpoint: Dict[str, Any], recover_optimizer: bool = True,
-                           recover_train_progress: bool = True):
+                           recover_train_progress: bool = True) -> None:
         self.recover_metrics(checkpoint=checkpoint)
 
         self.estimator.load_checkpoint(checkpoint=checkpoint,
                                        recover_optimizer=recover_optimizer,
                                        recover_train_progress=recover_train_progress)
 
-    def recover_metrics(self, checkpoint: Dict[str, Any]):
+    def recover_metrics(self, checkpoint: Dict[str, Any]) -> None:
         if "monitor_state" in checkpoint:
             monitor_state = checkpoint["monitor_state"]
         else:

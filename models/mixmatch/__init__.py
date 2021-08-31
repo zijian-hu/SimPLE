@@ -1,6 +1,6 @@
-from .mixmatch import mixmatch
-from .mixmatch_enhanced import mixmatch_enhanced
-from .simple_mixmatch import simple_mixmatch
+from .mixmatch import MixMatch
+from .mixmatch_base import MixMatchBase as MixMatchEnhanced
+from .simple_mixmatch import SimPLE
 
 # modules
 from . import utils
@@ -11,9 +11,10 @@ __all__ = [
     "utils",
     "types",
 
+    # classes
+    "MixMatch",
+    "MixMatchEnhanced",
+    "SimPLE",
+
     # functions
-    # mixmatch functions
-    "mixmatch",
-    "mixmatch_enhanced",
-    "simple_mixmatch",
 ]

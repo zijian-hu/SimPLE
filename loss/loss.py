@@ -82,7 +82,7 @@ class UnsupervisedLoss:
         loss = self.loss_fn(loss_input, targets, dim=1, reduction="none")
 
         if self.loss_thresholded:
-            targets_mask = (targets.max(dim=1)[0] > self.confidence_threshold)
+            targets_mask = (targets.max(dim=1).values > self.confidence_threshold)
 
             if len(loss.shape) > 1:
                 # mse_loss returns a matrix, need to reshape mask

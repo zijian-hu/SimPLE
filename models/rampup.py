@@ -54,3 +54,9 @@ class LinearRampUp(RampUp):
         self._update_step(is_step)
 
         return ramp_up
+
+
+def get_ramp_up(ramp_up_type: str, length: int, current: int = 0) -> RampUp:
+    return {
+        "linear": lambda: LinearRampUp(length, current),
+    }[ramp_up_type]()

@@ -8,7 +8,7 @@ by [Zijian Hu*](https://www.zijianhu.com/),
 
 ## Abstract
 
-<img src="media/pairloss_anim.png"  style="  display: block; margin-left: auto; margin-right: auto; width: 50%;"/>
+<img src="media/pairloss_anim.png" alt="Pair Loss" style="display: block; margin-left: auto; margin-right: auto; width: 50%;">
 
 A common classification task situation is where one has a large amount of data available for training, but only a small
 portion is annotated with class labels. The goal of semi-supervised training, in this context, is to improve
@@ -24,6 +24,7 @@ transfer learning setting, where models are initialized by the weights pre-train
 
 ## News
 
+[8/31/2021]: update the code base for easier extension <br>
 [6/22/2021]: add Mini-ImageNet example <br>
 [6/2/2021]: add animations and fix broken link in README <br>
 [5/30/2021]: initial release
@@ -35,18 +36,18 @@ transfer learning setting, where models are initialized by the weights pre-train
 - Python 3.6 or newer
 - [PyTorch](https://pytorch.org/) 1.6.0 or newer
 - [torchvision](https://pytorch.org/docs/stable/torchvision/index.html) 0.7.0 or newer
-- [kornia](https://kornia.readthedocs.io/en/latest/augmentation.html) 0.4.0 or newer
+- [kornia](https://kornia.readthedocs.io/en/latest/augmentation.html) 0.5.0 or newer
 - numpy
 - scikit-learn
 - [plotly](https://plotly.com/python/) 4.0.0 or newer
 - wandb 0.9.0 or newer (**optional**, required for logging to [Weights & Biases](https://www.wandb.com/)
-  see [WandbLogger](utils/loggers/wandb_logger.py) for detail) for detail)
+  see [utils.loggers.WandbLogger](utils/loggers.py) for detail)
 
 ### Recommended versions
 
 |Python|PyTorch|torchvision|kornia|
 | --- | --- | --- | --- |
-|3.6.9|1.6.0|0.7.0|0.4.0|
+|3.8.5|1.6.0|0.7.0|0.5.0|
 
 ## Setup
 
@@ -73,19 +74,7 @@ To replicate Mini-ImageNet results
 ```shell
 CUDA_DEVICE_ORDER="PCI_BUS_ID" CUDA_VISIBLE_DEVICES="0" \
 python main.py \
--e simple \
---num-epochs 2048 \
---dataset miniimagenet \
---labeled-train-size 4000 \
---validation-size 7200 \
---batch-size 16 \
---K-strong 7 \
---lambda-u 300 \
---lambda-pair 300 \
---conf-threshold 0.95 \
---sim-threshold 0.9 \
---ema-type full \
---max-grad-norm 5
+@runs/miniimagenet_args.txt
 ```
 
 To replicate CIFAR-10 results
@@ -93,20 +82,7 @@ To replicate CIFAR-10 results
 ```shell
 CUDA_DEVICE_ORDER="PCI_BUS_ID" CUDA_VISIBLE_DEVICES="0" \
 python main.py \
--e simple \
---num-epochs 1024 \
---dataset cifar10 \
---K-strong 7 \
---labeled-train-size 4000 \
---lr 0.03 \
---weight-decay 0.0005 \
---lambda-u 75 \
---lambda-pair 75 \
---conf-threshold 0.95 \
---sim-threshold 0.9 \
---max-grad-norm 5 \
---optimizer-type sgd \
---lr-scheduler-type cosine_decay
+@runs/cifar10_args.txt
 ```
 
 To replicate CIFAR-100 result (with distributed training)
@@ -115,22 +91,9 @@ To replicate CIFAR-100 result (with distributed training)
 CUDA_DEVICE_ORDER="PCI_BUS_ID" CUDA_VISIBLE_DEVICES="0,1" \
 python -m torch.distributed.launch \
 --nproc_per_node=2 main_ddp.py \
--e simple \
+@runs/miniimagenet_args.txt \
 --num-epochs 2048 \
---num-step-per-epoch 512 \
---dataset cifar100 \
---K-strong 4 \
---labeled-train-size 10000 \
---lr 0.03 \
---weight-decay 0.001 \
---lambda-u 150 \
---lambda-pair 150 \
---conf-threshold 0.95 \
---sim-threshold 0.9 \
---max-grad-norm 5 \
---model-type wrn28-8 \
---optimizer-type sgd \
---lr-scheduler-type cosine_decay
+--num-step-per-epoch 512
 ```
 
 ## Citation

@@ -1,26 +1,12 @@
 import torch
-from torch import nn
 from torch import onnx
-from torch.nn.parallel import DataParallel, DistributedDataParallel
+
+from .models.utils import *
 
 # for type hint
-from typing import Optional, Sequence, List, Generator, Any, Union, Dict, Set, Tuple
+from typing import Optional, Sequence, List, Generator, Any, Union, Set, Tuple, Dict
 from torch import Tensor
-from torch.nn import Parameter
-
-ModelType = Union[nn.Module, DataParallel, DistributedDataParallel]
-
-
-def to_one_hot(tensor: Tensor, num_classes: Optional[int] = None, dtype: torch.dtype = torch.float) -> Tensor:
-    # borrowed from https://discuss.pytorch.org/t/convert-int-into-one-hot-format/507/4
-    if num_classes is None:
-        num_classes = tensor.max().item() + 1
-
-    tensor_one_hot = torch.zeros((len(tensor), num_classes), dtype=dtype, device=tensor.device)
-    tensor_one_hot = tensor_one_hot.scatter(1, tensor.view(-1, 1), 1)
-
-    assert torch.all(tensor_one_hot.argmax(dim=1) == tensor)
-    return tensor_one_hot
+from torch.nn import Module, Parameter
 
 
 @torch.no_grad()
@@ -61,17 +47,17 @@ def interleave(xy: Sequence[Tensor], batch_size: int) -> List[Tensor]:
     return [torch.cat(v, dim=0) for v in xy]
 
 
-def get_gradient_norm(model: nn.Module, grad_enabled: bool = False) -> Tensor:
+def get_gradient_norm(model: Module, grad_enabled: bool = False) -> Tensor:
     with torch.set_grad_enabled(grad_enabled):
         return sum([(p.grad.detach() ** 2).sum() for p in model.parameters() if p.grad is not None])
 
 
-def get_weight_norm(model: nn.Module, grad_enabled: bool = False) -> Tensor:
+def get_weight_norm(model: Module, grad_enabled: bool = False) -> Tensor:
     with torch.set_grad_enabled(grad_enabled):
         return sum([(p.detach() ** 2).sum() for p in model.parameters() if p.data is not None])
 
 
-def split_classifier_params(model: nn.Module, classifier_prefix: Union[str, Set[str]]) \
+def split_classifier_params(model: Module, classifier_prefix: Union[str, Set[str]]) \
         -> Tuple[List[Parameter], List[Parameter]]:
     if not isinstance(classifier_prefix, Set):
         classifier_prefix = {classifier_prefix}
@@ -91,7 +77,7 @@ def split_classifier_params(model: nn.Module, classifier_prefix: Union[str, Set[
     return embedder_weights, classifier_weights
 
 
-def set_model_mode(model: nn.Module, mode: Optional[bool]) -> Generator[Any, Any, None]:
+def set_model_mode(model: Module, mode: Optional[bool]) -> Generator[Any, Any, None]:
     """
     A context manager to temporarily set the training mode of ‘model’ to ‘mode’, resetting it when we exit the
     with-block. A no-op if mode is None
@@ -110,16 +96,10 @@ def set_model_mode(model: nn.Module, mode: Optional[bool]) -> Generator[Any, Any
         return onnx.set_training(model, mode)
 
 
-def unwrap_model(model: ModelType) -> nn.Module:
-    if hasattr(model, "module"):
-        return model.module
-    else:
-        return model
-
-
 def consume_prefix_in_state_dict_if_present(state_dict: Dict[str, Any], prefix: str):
-    # copied from https://github.com/pytorch/pytorch/blob/255494c2aa1fcee7e605a6905be72e5b8ccf4646/torch/nn/modules/utils.py#L37-L67
-    r"""Strip the prefix in state_dict, if any.
+    r"""copied from https://github.com/pytorch/pytorch/blob/255494c2aa1fcee7e605a6905be72e5b8ccf4646/torch/nn/modules/utils.py#L37-L67
+
+    Strip the prefix in state_dict, if any.
     ..note::
         Given a `state_dict` from a DP/DDP model, a local model can load it by applying
         `consume_prefix_in_state_dict_if_present(state_dict, "module.")` before calling
@@ -147,3 +127,15 @@ def consume_prefix_in_state_dict_if_present(state_dict: Dict[str, Any], prefix: 
                 continue
             newkey = key[len(prefix):]
             metadata[newkey] = metadata.pop(key)
+
+
+__all__ = [
+    "get_accuracy",
+    "interleave",
+    "get_gradient_norm",
+    "get_weight_norm",
+    "split_classifier_params",
+    "set_model_mode",
+    "unwrap_model",
+    "consume_prefix_in_state_dict_if_present",
+]

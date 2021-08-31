@@ -3,13 +3,12 @@ from torch.utils.data import Dataset, DataLoader, Subset
 from tqdm import tqdm
 
 from itertools import repeat, combinations
-
-from .datasets import LabeledDataset, UnlabeledDataset
+from pathlib import Path
 
 # for type hint
 from typing import Optional, Generator, Tuple, Union, List, Sequence, Any
 from torch import Tensor
-from PIL.Image import Image as PIL_Image
+from PIL.Image import Image
 from torchvision.datasets import VisionDataset
 
 BatchType = Union[Tuple[Tuple[Tensor, Tensor], ...], Tuple[Tensor, Tensor]]
@@ -39,8 +38,7 @@ def get_batch(loaders: Sequence[LoaderType], max_iter: int, is_repeat: bool = Fa
         yield idx, batch
 
 
-def get_targets(dataset: Union[Dataset, LabeledDataset, VisionDataset]) -> List[Any]:
-    assert not isinstance(dataset, UnlabeledDataset), "Unlabeled datasets do not contain labels"
+def get_targets(dataset: Union[Dataset, VisionDataset]) -> List[Any]:
     if hasattr(dataset, 'targets'):
         return dataset.targets
 
@@ -255,64 +253,14 @@ def per_class_random_split_helper(dataset: Dataset,
     return [Subset(dataset, subset_idx) for subset_idx in subset_indices]
 
 
-def get_dataset_stats(data: np.ndarray, axes: Optional[Sequence[int]] = None, max_value: Union[float, int] = 255) \
-        -> Tuple[np.ndarray, np.ndarray]:
-    if axes is None:
-        axes = (0, 1, 2)
-
-    dataset_mean = np.mean(data / max_value, axis=axes)
-    dataset_std = np.std(data / max_value, axis=axes)
-
-    return dataset_mean, dataset_std
-
-
-def get_dataset_stats_v2(dataset: Dataset, axes: Optional[Sequence[int]] = None,
-                         max_value: Union[float, int] = 255) \
-        -> Optional[Tuple[np.ndarray, np.ndarray]]:
-    if axes is None:
-        axes = (0, 1, 2)
-
-    if len(dataset) == 0:
-        return None
-
-    shape = get_data_shape(dataset[0][0])
-
-    # see https://www.johndcook.com/blog/standard_deviation/ for detail
-    mean_est = np.asarray(dataset[0][0], dtype=float) / max_value
-    var_est = np.zeros(shape, dtype=float)
-
-    k = 0
-    for (x, _) in tqdm(dataset):
-        if k > 0:
-            x = np.asarray(x, dtype=float) / max_value
-
-            # M_k = M_{k-1} + (x_k – M_{k-1}) / k
-            new_mean = mean_est + (x - mean_est) / k
-            # S_k = S_{k-1} + (x_k – M_{k-1}) * (x_k – M_k)
-            new_std = var_est + (x - mean_est) * (x - new_mean)
-
-            # update mean and std
-            mean_est = new_mean
-            var_est = new_std
-
-        # increment counter
-        k += 1
-
-    dataset_mean = mean_est
-    dataset_var = var_est / (k - 1)
-
-    dataset_mean = np.mean(dataset_mean, axis=axes)
-    dataset_var = np.mean(dataset_var, axis=axes)
-
-    dataset_std = np.sqrt(dataset_var)
-
-    return dataset_mean, dataset_std
-
-
-def get_data_shape(data_point: Union[np.ndarray, Tensor, PIL_Image]):
+def get_data_shape(data_point: Union[np.ndarray, Tensor, Image]):
     data_shape = np.asarray(data_point).shape
     if isinstance(data_point, Tensor) and len(data_shape) >= 3:
         # torch tensor has channel (C, H, W, ...), swap channel to (H, W, ..., C)
         data_shape = np.roll(data_shape, -1)
 
     return data_shape
+
+
+def get_directory_size(dirname: Union[Path, str]) -> int:
+    return sum(f.stat().st_size for f in Path(dirname).rglob("*") if f.is_file())

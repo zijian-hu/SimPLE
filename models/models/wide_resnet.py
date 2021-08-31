@@ -23,7 +23,7 @@ to get the name of the layer in state_dict, see the following example
 >>>         print("{} -> {}".format(idx, n))
 """
 import torch
-import torch.nn as nn
+from torch import nn
 import numpy as np
 
 # for type hint

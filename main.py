@@ -1,7 +1,5 @@
 import torch
 
-from pathlib import Path
-
 from utils import get_args, timing, set_random_seed, get_device, get_dataset
 from models import get_augmenter
 from simple_estimator import SimPLEEstimator
@@ -9,15 +7,14 @@ from ablation_estimator import AblationEstimator
 from trainer import Trainer
 
 # for type hint
-from typing import Optional
+from typing import Optional, Type
 from argparse import Namespace
 from torch.nn import Module
 
 from utils.dataset import SSLDataModule
-from utils.types import DatasetDictType
 
 
-def get_estimator_type(estimator_type: str) -> type(SimPLEEstimator):
+def get_estimator_type(estimator_type: str) -> Type[SimPLEEstimator]:
     if estimator_type == "ablation":
         return AblationEstimator
     else:
@@ -28,7 +25,8 @@ def get_estimator(args: Namespace,
                   augmenter: Module,
                   strong_augmenter: Module,
                   val_augmenter: Module,
-                  dataset_dict: DatasetDictType,
+                  num_classes: int,
+                  in_channels: int,
                   device: Optional[torch.device],
                   args_override: Optional[Namespace] = None,
                   estimator_type: Optional[type(SimPLEEstimator)] = None):
@@ -42,7 +40,8 @@ def get_estimator(args: Namespace,
             strong_augmenter=strong_augmenter,
             val_augmenter=val_augmenter,
             checkpoint_path=args.checkpoint_path,
-            dataset_dict=dataset_dict,
+            num_classes=num_classes,
+            in_channels=in_channels,
             device=device,
             args_override=args_override,
             recover_train_progress=True,
@@ -53,7 +52,8 @@ def get_estimator(args: Namespace,
             augmenter=augmenter,
             strong_augmenter=strong_augmenter,
             val_augmenter=val_augmenter,
-            dataset_dict=dataset_dict,
+            num_classes=num_classes,
+            in_channels=in_channels,
             device=device)
 
     return estimator
@@ -84,10 +84,8 @@ def main(args: Namespace, datamodule: Optional[SSLDataModule] = None, device: Op
                               augmenter=augmenter,
                               strong_augmenter=strong_augmenter,
                               val_augmenter=val_augmenter,
-                              dataset_dict={
-                                  "num_classes": datamodule.num_classes,
-                                  "in_channels": datamodule.dims[0],
-                              },
+                              num_classes=datamodule.num_classes,
+                              in_channels=datamodule.dims[0],
                               device=device,
                               args_override=args)
     trainer = Trainer(estimator, datamodule=datamodule)
@@ -97,9 +95,10 @@ def main(args: Namespace, datamodule: Optional[SSLDataModule] = None, device: Op
 
     # load the best state
     best_checkpoint_path = trainer.saver.find_best_checkpoint_path(ignore_absolute_best=False)
-    best_checkpoint = torch.load(best_checkpoint_path, map_location=device)
 
-    trainer.load_checkpoint(best_checkpoint)
+    if best_checkpoint_path is not None:
+        best_checkpoint = torch.load(str(best_checkpoint_path), map_location=device)
+        trainer.load_checkpoint(best_checkpoint)
 
     # evaluation
     trainer.test()

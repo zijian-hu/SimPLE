@@ -3,7 +3,7 @@ import sys
 from .logger import Logger
 
 # for type hint
-from typing import Union, Dict, Any, Optional
+from typing import Any, Dict, Optional, Union
 from argparse import Namespace
 
 from torch.nn import Module

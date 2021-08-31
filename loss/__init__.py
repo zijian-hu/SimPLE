@@ -1,5 +1,5 @@
 from .pair_loss import PairLoss
-from .utils import (bha_coeff, bha_coeff_distance, hel_dist, l2_distance)
+from .utils import bha_coeff, bha_coeff_distance, l2_distance
 from .loss import (SupervisedLoss, UnsupervisedLoss, softmax_cross_entropy_loss, bha_coeff_loss,
                    l2_dist_loss)
 
@@ -13,29 +13,49 @@ from . import visualization
 from typing import Tuple
 from argparse import Namespace
 
-from .types import LossOutType, SimilarityType, DistanceType, DistanceLossType
+from .types import SimilarityType, DistanceType, DistanceLossType
 
 
-def get_similarity_metric(similarity_type: str) -> SimilarityType:
-    # other similarity functions can be added here
-    return bha_coeff
+def get_similarity_metric(similarity_type: str) -> Tuple[SimilarityType, str]:
+    """
 
+    Args:
+        similarity_type: the type of the similarity function
 
-def get_distance_loss_metric(distance_loss_type: str) -> Tuple[DistanceLossType, bool]:
-    # other distance loss functions can be added here
-    if distance_loss_type == "l2":
-        distance_use_prob = True
-        distance_loss_metric = l2_dist_loss
+    Returns: similarity function, string indicating the type of the similarity (from [logit, prob, feature])
+
+    """
+    if similarity_type == "bhc":
+        return bha_coeff, "prob"
 
     else:
-        distance_use_prob = False
-        distance_loss_metric = bha_coeff_loss
+        raise NotImplementedError(f"\"{similarity_type}\" is not a supported similarity type")
 
-    return distance_loss_metric, distance_use_prob
+
+def get_distance_loss_metric(distance_loss_type: str) -> Tuple[DistanceLossType, str]:
+    """
+
+
+    Args:
+        distance_loss_type: the type of the distance loss function
+
+    Returns: distance loss function, string indicating the type of the loss (from [logit, prob])
+
+    """
+    if distance_loss_type == "bhc":
+        return bha_coeff_loss, "logit"
+
+    elif distance_loss_type == "l2":
+        return l2_dist_loss, "prob"
+
+    elif distance_loss_type == "entropy":
+        return softmax_cross_entropy_loss, "logit"
+
+    else:
+        raise NotImplementedError(f"\"{distance_loss_type}\" is not a supported distance loss type")
 
 
 def build_supervised_loss(args: Namespace) -> SupervisedLoss:
-    # other loss functions can be added here
     return SupervisedLoss(reduction="mean")
 
 
@@ -48,15 +68,16 @@ def build_unsupervised_loss(args: Namespace) -> UnsupervisedLoss:
 
 
 def build_pair_loss(args: Namespace, reduction: str = "mean") -> PairLoss:
-    similarity_metric = get_similarity_metric(args.similarity_type)
-    distance_loss_metric, distance_use_prob = get_distance_loss_metric(args.distance_loss_type)
+    similarity_metric, similarity_type = get_similarity_metric(args.similarity_type)
+    distance_loss_metric, distance_loss_type = get_distance_loss_metric(args.distance_loss_type)
 
     return PairLoss(
         similarity_metric=similarity_metric,
         distance_loss_metric=distance_loss_metric,
         confidence_threshold=args.confidence_threshold,
         similarity_threshold=args.similarity_threshold,
-        distance_use_prob=distance_use_prob,
+        similarity_type=similarity_type,
+        distance_loss_type=distance_loss_type,
         reduction=reduction)
 
 

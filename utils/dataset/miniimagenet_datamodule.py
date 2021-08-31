@@ -2,8 +2,7 @@ from .miniimagenet import MiniImageNet
 from .cifar10_datamodule import CIFAR10DataModule
 
 # for type hint
-from typing import Optional
-from torchvision.transforms import Compose
+from typing import Optional, Tuple
 
 
 class MiniImageNetDataModule(CIFAR10DataModule):
@@ -16,30 +15,21 @@ class MiniImageNetDataModule(CIFAR10DataModule):
 
     def __init__(self,
                  data_dir: str,
-                 batch_size: int,
-                 num_workers: int,
                  labeled_train_size: int,
                  validation_size: int,
                  unlabeled_train_size: Optional[int] = None,
-                 unlabeled_train_batch_size: Optional[int] = None,
-                 test_batch_size: Optional[int] = None,
-                 train_transforms: Optional[Compose] = None,
-                 val_transforms: Optional[Compose] = None,
-                 test_transforms: Optional[Compose] = None):
+                 dims: Optional[Tuple[int, ...]] = None,
+                 **kwargs):
+        if dims is None:
+            dims = (3, 84, 84)
+
         super(MiniImageNetDataModule, self).__init__(
             data_dir=data_dir,
-            batch_size=batch_size,
-            num_workers=num_workers,
             labeled_train_size=labeled_train_size,
             validation_size=validation_size,
             unlabeled_train_size=unlabeled_train_size,
-            unlabeled_train_batch_size=unlabeled_train_batch_size,
-            test_batch_size=test_batch_size,
-            train_transforms=train_transforms,
-            val_transforms=val_transforms,
-            test_transforms=test_transforms)
-
-        self.dims = (3, 84, 84)
+            dims=dims,
+            **kwargs)
 
         # dataset stats
         # Mini-ImageNet mean, std values in CHW

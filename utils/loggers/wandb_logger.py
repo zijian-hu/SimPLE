@@ -5,7 +5,7 @@ import sys
 from .logger import Logger
 
 # for type hint
-from typing import Union, Dict, Any, Sequence, Optional
+from typing import Any, Dict, Optional, Union, Sequence
 from argparse import Namespace
 
 from torch.nn import Module

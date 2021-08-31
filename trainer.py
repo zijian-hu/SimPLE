@@ -3,8 +3,9 @@ from torch import distributed
 from torch.utils.data import DataLoader, DistributedSampler
 from tqdm import tqdm
 
+from pathlib import Path
+
 from simple_estimator import SimPLEEstimator
-from models import get_trainable_params
 from models.utils import get_weight_norm, get_gradient_norm, set_model_mode
 from utils import timing, get_logger
 from utils.dataset import get_batch
@@ -18,7 +19,7 @@ from torch.nn import Module
 from torch.optim.optimizer import Optimizer
 
 from utils.dataset import SSLDataModule
-from loss.types import LossOutType
+from loss.types import LossInfoType
 from utils.types import BatchGeneratorType
 from models.types import LRSchedulerType
 
@@ -76,7 +77,14 @@ class Trainer:
         # assign intermediate variables
         self.log_labeled_train_set = self.exp_args.log_labeled_train_set
         self.log_unlabeled_train_set = self.exp_args.log_unlabeled_train_set
+        self.log_validation_set = self.exp_args.log_validation_set
         self.log_test_set = self.exp_args.log_test_set
+
+        if self.is_main_thread:
+            log_dir_path = Path(self.exp_args.log_dir)
+
+            if not log_dir_path.exists():
+                log_dir_path.mkdir(parents=True, exist_ok=True)
 
     @property
     def estimator(self) -> SimPLEEstimator:
@@ -110,6 +118,9 @@ class Trainer:
         if self.is_main_thread:
             self.datamodule.prepare_data()
         self.datamodule.setup()
+        # save dataset split info
+        if self.is_main_thread:
+            self.datamodule.save_split_info(self.exp_args.log_dir)
 
         # assign data loaders
         self.labeled_train_loader, self.unlabeled_train_loader = self.datamodule.train_dataloader()
@@ -255,12 +266,12 @@ class Trainer:
     @property
     def is_main_thread(self) -> bool:
         """
-        Process with local_rank 0 or lower is considered main thread. This is used in distributed training where
-        only main thread save checkpoints and log
+        Process with on rank 0 node and with local_rank 0 is considered the main thread.
+        This flag is used in distributed training where only main thread save checkpoints and log
 
-        Returns: True if the current thread is main thread
+        Returns: True if the current thread is the main thread
         """
-        return self.exp_args.local_rank <= 0
+        return not self.is_distributed or (self.exp_args.local_rank <= 0 and distributed.get_rank() == 0)
 
     @property
     def is_distributed(self) -> bool:
@@ -273,7 +284,7 @@ class Trainer:
         return self.estimator.get_trainable_model()
 
     @timing
-    def fit(self) -> None:
+    def fit(self, is_update_best_checkpoint: bool = True) -> None:
         start_epoch = self.epoch
 
         for epoch in range(start_epoch, self.num_epochs):
@@ -285,8 +296,9 @@ class Trainer:
             # save the latest checkpoint
             self.save_latest_checkpoint()
 
-        # update best metrics and save a new checkpoint
-        self.update_best_checkpoint()
+        if is_update_best_checkpoint:
+            # update best metrics and save a new checkpoint
+            self.update_best_checkpoint()
 
     def test(self) -> None:
         # testing
@@ -344,9 +356,14 @@ class Trainer:
         outputs = self.logger.aggregate_log(reduction="mean")
         outputs = self.log_train_info(outputs, is_commit=False)
 
+        self.training_epoch_end()
+
         return outputs
 
-    def training_step(self, batch: Tuple[Tuple[Tensor, Tensor], ...], batch_idx: int) -> LossOutType:
+    def training_epoch_end(self, *args, **kwargs) -> None:
+        self.estimator.training_epoch_end(*args, **kwargs)
+
+    def training_step(self, batch: Tuple[Tuple[Tensor, Tensor], ...], batch_idx: int) -> Tuple[Tensor, LossInfoType]:
         loss, log_dict = self.estimator.training_step(batch, batch_idx)
 
         return loss, {k: self.reduce_log_dict(v) for k, v in log_dict.items()}
@@ -376,7 +393,7 @@ class Trainer:
 
         return self.logger.aggregate_log(reduction="mean")
 
-    def validation_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int) -> Dict[str, float]:
+    def validation_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int) -> Dict[str, Tensor]:
         log_dict = self.estimator.validation_step(batch, batch_idx)
 
         return self.reduce_log_dict(log_dict)
@@ -432,8 +449,9 @@ class Trainer:
             self.logger.log(log_info, prefix="unlabeled", step=self.global_step)
 
         # log validation loss and accuracy
-        log_info = self.validation_epoch(self.validation_loader, desc="Validation")
-        self.logger.log(log_info, prefix="validation", step=self.global_step)
+        if self.log_validation_set:
+            log_info = self.validation_epoch(self.validation_loader, desc="Validation")
+            self.logger.log(log_info, prefix="validation", step=self.global_step)
 
         if self.log_test_set:
             # log test loss and accuracy
@@ -552,11 +570,13 @@ class Trainer:
         from torch.nn.parallel import DistributedDataParallel
         from torch.nn import SyncBatchNorm
 
+        local_rank = self.exp_args.local_rank
+
         self.model = SyncBatchNorm.convert_sync_batchnorm(self.model)
         self.model = DistributedDataParallel(
             self.model,
-            device_ids=[self.exp_args.local_rank],
-            output_device=self.exp_args.local_rank,
+            device_ids=[local_rank],
+            output_device=local_rank,
             broadcast_buffers=True)
 
         # setup data loaders
@@ -589,11 +609,11 @@ class Trainer:
             drop_last=True)
 
     @staticmethod
-    def to_distributed_loader(loader: DataLoader, shuffle: bool, **kwargs) -> DataLoader:
+    def to_distributed_loader(loader: DataLoader, shuffle: bool, **kwargs) -> Optional[DataLoader]:
         return DataLoader(dataset=loader.dataset,
                           batch_size=loader.batch_size,
                           sampler=DistributedSampler(loader.dataset, shuffle=shuffle),
-                          **kwargs)
+                          **kwargs) if loader is not None else None
 
     @staticmethod
     def sampler_set_epoch(loader: DataLoader, epoch: int) -> None:

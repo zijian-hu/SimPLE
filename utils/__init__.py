@@ -5,7 +5,7 @@ from torch.backends import cudnn
 
 from .cli import get_arg_parser, get_args, update_args, args_to_logger_config
 from .dataset import get_dataset, repeater
-from .file_io import find_all_files, find_checkpoint_path
+from .file_io import find_checkpoint_path, read_yaml, find_all_files
 
 from .timing import timing
 from .loggers import Logger, LogAggregator
@@ -74,8 +74,9 @@ __all__ = [
     "args_to_logger_config",
     "get_dataset",
     "repeater",
-    "find_all_files",
     "find_checkpoint_path",
+    "read_yaml",
+    "find_all_files",
     "timing",
     "get_logger",
     "str_to_bool",

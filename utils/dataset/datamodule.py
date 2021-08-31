@@ -1,20 +1,20 @@
 from abc import ABC, abstractmethod
 
 # for type hint
-from typing import List, Union, Optional, Any, Generator
+from typing import Optional, Tuple, Callable, Union, List, Generator, Any
 from torch.utils.data import DataLoader
-from torchvision.transforms import Compose
 
 
 class DataModule(ABC):
     def __init__(self,
-                 train_transforms: Optional[Compose] = None,
-                 val_transforms: Optional[Compose] = None,
-                 test_transforms: Optional[Compose] = None,
-                 dims=None):
-        self.train_transforms = train_transforms
-        self.val_transforms = val_transforms
-        self.test_transforms = test_transforms
+                 train_transform: Optional[Callable] = None,
+                 val_transform: Optional[Callable] = None,
+                 test_transform: Optional[Callable] = None,
+                 dims: Optional[Tuple[int, ...]] = None):
+        self.train_transform = train_transform
+        self.val_transform = val_transform
+        self.test_transform = test_transform
+        self.dims = dims
 
     @abstractmethod
     def prepare_data(self, *args, **kwargs):
