@@ -91,7 +91,7 @@ To replicate CIFAR-100 result (with distributed training)
 CUDA_DEVICE_ORDER="PCI_BUS_ID" CUDA_VISIBLE_DEVICES="0,1" \
 python -m torch.distributed.launch \
 --nproc_per_node=2 main_ddp.py \
-@runs/miniimagenet_args.txt \
+@runs/cifar100_args.txt \
 --num-epochs 2048 \
 --num-step-per-epoch 512
 ```
