@@ -345,6 +345,14 @@ def get_arg_parser() -> argparse.ArgumentParser:
                         type=str,
                         help=f"dataset type")
 
+    parser.add_argument('--dims',
+                        '--data-dims',
+                        dest="data_dims",
+                        default=None,
+                        type=int,
+                        nargs=3,
+                        help='Data dimensions in CHW')
+
     parser.add_argument('--num-workers',
                         dest="num_workers",
                         default=0,
@@ -697,6 +705,9 @@ def verify_args(args: Namespace) -> None:
     assert args.labeled_train_size >= 1, f"labeled_train_size must be >= 1 but get {args.labeled_train_size}"
     assert args.validation_size >= 1, f"validation_size must be >= 1 but get {args.validation_size}"
     assert args.lr_warmup_step >= 0, f"lr_warmup_step must be >= 0 but get {args.lr_warmup_step}"
+
+    if args.data_dims is not None:
+        assert all(dim > 0 for dim in args.data_dims), f"data_dims must all be > 0 but get {args.data_dims}"
 
     assert args.num_latest_checkpoints_kept is None or args.num_latest_checkpoints_kept >= 0, \
         f"num_latest_checkpoints_kept must be None or >= 0, but get {args.num_latest_checkpoints_kept}"
