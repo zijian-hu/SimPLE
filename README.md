@@ -24,6 +24,7 @@ transfer learning setting, where models are initialized by the weights pre-train
 
 ## News
 
+[11/8/2021]: bugfix that could result in incorrect data loading in distributed training <br>
 [9/20/2021]: add data_dims option for data resizing <br>
 [8/31/2021]: update the code base for easier extension <br>
 [6/22/2021]: add Mini-ImageNet example <br>

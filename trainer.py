@@ -117,6 +117,8 @@ class Trainer:
         # setup datasets
         if self.is_main_thread:
             self.datamodule.prepare_data()
+        self.sync_distributed()
+
         self.datamodule.setup()
         # save dataset split info
         if self.is_main_thread:
@@ -506,9 +508,8 @@ class Trainer:
         if self.is_main_thread:
             self.saver.update_best_checkpoint()
 
-        if self.is_distributed:
-            # sync all processes, wait until best checkpoint is updated
-            distributed.barrier()
+        # sync all processes, wait until best checkpoint is updated
+        self.sync_distributed()
 
     def load_checkpoint(self, checkpoint: Dict[str, Any], recover_optimizer: bool = True,
                         recover_train_progress: bool = True) -> None:
@@ -621,3 +622,8 @@ class Trainer:
 
         if isinstance(sampler, DistributedSampler):
             sampler.set_epoch(epoch)
+
+    def sync_distributed(self):
+        if self.is_distributed:
+            # sync all distributed processes
+            distributed.barrier()
