@@ -1,6 +1,6 @@
 import torch
 from torch import onnx
-
+import numpy as np
 from .models.utils import *
 
 # for type hint
@@ -30,9 +30,7 @@ def interleave_offsets(batch_size: int, num_unlabeled: int) -> List[int]:
     groups = [batch_size // (num_unlabeled + 1)] * (num_unlabeled + 1)
     for x in range(batch_size - sum(groups)):
         groups[-x - 1] += 1
-    offsets = [0]
-    for g in groups:
-        offsets.append(offsets[-1] + g)
+    offsets = [0] + np.cumsum(groups).tolist()
     assert offsets[-1] == batch_size
     return offsets
 
